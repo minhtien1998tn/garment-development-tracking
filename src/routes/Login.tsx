@@ -1,38 +1,44 @@
-import { useEffect, useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { listAllCustomers, listEmployeesForCustomer } from "@/lib/api";
-import type { Customer, Employee } from "@/lib/types";
+import { supabase } from "@/lib/supabaseClient";
+import type { Employee } from "@/lib/types";
 
 export function Login() {
   const { employee, loading, selectEmployee } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loadingStep, setLoadingStep] = useState(false);
-
-  useEffect(() => {
-    listAllCustomers().then((list) => setCustomers(list.filter((c) => c.active)));
-  }, []);
+  const [employeeCode, setEmployeeCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!loading && employee) {
     const from = (location.state as { from?: string } | null)?.from ?? "/";
     return <Navigate to={from} replace />;
   }
 
-  async function handlePickCustomer(c: Customer) {
-    setCustomer(c);
-    setLoadingStep(true);
-    setEmployees(await listEmployeesForCustomer(c.id));
-    setLoadingStep(false);
-  }
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
 
-  async function handlePickEmployee(emp: Employee) {
-    await selectEmployee(emp.id);
-    navigate(customer ? `/customers/${customer.id}` : "/", { replace: true });
+    const { data } = await supabase
+      .from("employees")
+      .select("*")
+      .ilike("employee_code", employeeCode.trim())
+      .eq("active", true)
+      .maybeSingle<Employee>();
+
+    setSubmitting(false);
+
+    if (!data) {
+      setError("Mã nhân viên không hợp lệ.");
+      return;
+    }
+
+    await selectEmployee(data.id);
+    navigate("/", { replace: true });
   }
 
   return (
@@ -46,7 +52,7 @@ export function Login() {
         padding: 20,
       }}
     >
-      <div className="card" style={{ width: 420, padding: 28 }}>
+      <form onSubmit={handleSubmit} className="card" style={{ width: 360, padding: 28 }}>
         <div style={{ marginBottom: 20 }}>
           <div
             style={{
@@ -71,77 +77,48 @@ export function Login() {
           </div>
         </div>
 
-        {!customer ? (
-          <>
-            <div style={stepLabelStyle}>Bước 1 — Chọn khách hàng</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {customers.length === 0 && (
-                <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>Đang tải...</div>
-              )}
-              {customers.map((c) => (
-                <button key={c.id} className="btn" style={pickButtonStyle} onClick={() => handlePickCustomer(c)}>
-                  {c.name}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={stepLabelStyle}>
-              Bước 2 — Chọn tên bạn{" "}
-              <button
-                onClick={() => {
-                  setCustomer(null);
-                  setEmployees([]);
-                }}
-                style={{
-                  border: "none",
-                  background: "none",
-                  color: "var(--color-orange-dark)",
-                  cursor: "pointer",
-                  fontSize: 11.5,
-                  fontFamily: "var(--font-mono)",
-                  textTransform: "none",
-                  letterSpacing: 0,
-                }}
-              >
-                (đổi khách hàng)
-              </button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {loadingStep && <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>Đang tải...</div>}
-              {!loadingStep && employees.length === 0 && (
-                <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>
-                  Chưa có nhân viên nào được gán cho khách hàng "{customer.name}".
-                </div>
-              )}
-              {employees.map((emp) => (
-                <button key={emp.id} className="btn" style={pickButtonStyle} onClick={() => handlePickEmployee(emp)}>
-                  {emp.full_name}
-                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-3)" }}>
-                    {emp.employee_code}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </>
+        <label style={fieldLabelStyle}>Mã nhân viên</label>
+        <input
+          autoFocus
+          value={employeeCode}
+          onChange={(e) => setEmployeeCode(e.target.value)}
+          placeholder="vd: NV001"
+          style={inputStyle}
+        />
+
+        {error && (
+          <div style={{ color: "var(--color-rose)", fontSize: 13, margin: "10px 0" }}>{error}</div>
         )}
-      </div>
+
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={submitting || !employeeCode.trim()}
+          style={{ width: "100%", justifyContent: "center", marginTop: 14 }}
+        >
+          {submitting ? "Đang kiểm tra..." : "Vào hệ thống"}
+        </button>
+      </form>
     </div>
   );
 }
 
-const stepLabelStyle = {
+const fieldLabelStyle = {
+  display: "block",
   fontFamily: "var(--font-mono)",
   fontSize: 10.5,
   textTransform: "uppercase" as const,
   letterSpacing: "0.06em",
   color: "var(--color-text-2)",
-  marginBottom: 10,
+  marginBottom: 6,
+  marginTop: 12,
 };
 
-const pickButtonStyle = {
+const inputStyle = {
   width: "100%",
-  justifyContent: "flex-start",
-  textAlign: "left" as const,
+  padding: "9px 12px",
+  borderRadius: 9,
+  border: "1px solid var(--color-border)",
+  fontSize: 14,
+  outline: "none",
 };

@@ -127,25 +127,6 @@ export async function listEmployeeBrands(customerId: string): Promise<string[]> 
   return orThrow(data, error).map((r) => r.employee_id as string);
 }
 
-export async function listManagersForCustomer(customerId: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("customer_managers")
-    .select("employee_id")
-    .eq("customer_id", customerId);
-  return orThrow(data, error).map((r) => r.employee_id as string);
-}
-
-/** Nhân viên liên quan tới 1 khách hàng — dùng cho màn hình chọn danh tính (không mật khẩu). */
-export async function listEmployeesForCustomer(customerId: string): Promise<Employee[]> {
-  const [all, brandIds, managerIds] = await Promise.all([
-    listEmployees(),
-    listEmployeeBrands(customerId),
-    listManagersForCustomer(customerId),
-  ]);
-  const relevantIds = new Set([...brandIds, ...managerIds]);
-  return all.filter((e) => e.active && (e.role === "admin" || relevantIds.has(e.id)));
-}
-
 /** Tạo nhân viên mới — không còn tài khoản/mật khẩu, chỉ là 1 dòng trong danh sách chọn. */
 export async function createEmployeeDirect(input: {
   employeeCode: string;
