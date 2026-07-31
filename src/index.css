@@ -85,9 +85,10 @@
   .sidebar-logo .mark {
     font-family: var(--font-display);
     font-weight: 800;
-    font-size: 20px;
+    font-size: 16px;
+    line-height: 1.15;
     color: var(--color-orange);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
   }
 
   .sidebar-logo .sub {

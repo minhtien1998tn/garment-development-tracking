@@ -18,7 +18,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <div className="mark">PDC TRACKER</div>
+        <div className="mark">GARMENT DEV TRACKING</div>
         <div className="sub">Product Development</div>
       </div>
 

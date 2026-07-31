@@ -1,4 +1,4 @@
-# PDC Tracker — Quản lý tiến độ phát triển sản phẩm
+# Garment Development Tracking — Quản lý tiến độ phát triển sản phẩm
 
 Web app nội bộ cho bộ phận Product Development của công ty may FOB: nhân viên đăng nhập
 bằng mã số + mật khẩu, theo dõi tiến độ mã hàng qua các bước công việc (Proto1/2/3, SMS,

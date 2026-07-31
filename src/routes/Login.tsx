@@ -45,11 +45,11 @@ export function Login() {
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 800,
-              fontSize: 26,
+              fontSize: 22,
               color: "var(--color-orange)",
             }}
           >
-            PDC TRACKER
+            GARMENT DEV TRACKING
           </div>
           <div
             style={{

@@ -1,4 +1,4 @@
--- PDC Tracker — schema chính.
+-- Garment Development Tracking — schema chính.
 -- "customer" trong schema này chính là "brand" nhắc tới trong yêu cầu nghiệp vụ.
 
 create extension if not exists pgcrypto;
