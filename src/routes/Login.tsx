@@ -1,32 +1,38 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { listAllCustomers, listEmployeesForCustomer } from "@/lib/api";
+import type { Customer, Employee } from "@/lib/types";
 
 export function Login() {
-  const { employee, loading, login } = useAuth();
+  const { employee, loading, selectEmployee } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [employeeCode, setEmployeeCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingStep, setLoadingStep] = useState(false);
+
+  useEffect(() => {
+    listAllCustomers().then((list) => setCustomers(list.filter((c) => c.active)));
+  }, []);
 
   if (!loading && employee) {
     const from = (location.state as { from?: string } | null)?.from ?? "/";
     return <Navigate to={from} replace />;
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    const { error } = await login(employeeCode, password);
-    setSubmitting(false);
-    if (error) {
-      setError(error);
-      return;
-    }
-    navigate("/", { replace: true });
+  async function handlePickCustomer(c: Customer) {
+    setCustomer(c);
+    setLoadingStep(true);
+    setEmployees(await listEmployeesForCustomer(c.id));
+    setLoadingStep(false);
+  }
+
+  async function handlePickEmployee(emp: Employee) {
+    await selectEmployee(emp.id);
+    navigate(customer ? `/customers/${customer.id}` : "/", { replace: true });
   }
 
   return (
@@ -37,9 +43,10 @@ export function Login() {
         alignItems: "center",
         justifyContent: "center",
         background: "var(--color-bg)",
+        padding: 20,
       }}
     >
-      <form onSubmit={handleSubmit} className="card" style={{ width: 360, padding: 28 }}>
+      <div className="card" style={{ width: 420, padding: 28 }}>
         <div style={{ marginBottom: 20 }}>
           <div
             style={{
@@ -64,58 +71,77 @@ export function Login() {
           </div>
         </div>
 
-        <label style={fieldLabelStyle}>Mã nhân viên</label>
-        <input
-          autoFocus
-          value={employeeCode}
-          onChange={(e) => setEmployeeCode(e.target.value)}
-          placeholder="vd: NV001"
-          style={inputStyle}
-        />
-
-        <label style={fieldLabelStyle}>Mật khẩu</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-        />
-
-        {error && (
-          <div style={{ color: "var(--color-rose)", fontSize: 13, marginBottom: 12 }}>
-            {error}
-          </div>
+        {!customer ? (
+          <>
+            <div style={stepLabelStyle}>Bước 1 — Chọn khách hàng</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {customers.length === 0 && (
+                <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>Đang tải...</div>
+              )}
+              {customers.map((c) => (
+                <button key={c.id} className="btn" style={pickButtonStyle} onClick={() => handlePickCustomer(c)}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={stepLabelStyle}>
+              Bước 2 — Chọn tên bạn{" "}
+              <button
+                onClick={() => {
+                  setCustomer(null);
+                  setEmployees([]);
+                }}
+                style={{
+                  border: "none",
+                  background: "none",
+                  color: "var(--color-orange-dark)",
+                  cursor: "pointer",
+                  fontSize: 11.5,
+                  fontFamily: "var(--font-mono)",
+                  textTransform: "none",
+                  letterSpacing: 0,
+                }}
+              >
+                (đổi khách hàng)
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {loadingStep && <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>Đang tải...</div>}
+              {!loadingStep && employees.length === 0 && (
+                <div style={{ color: "var(--color-text-3)", fontSize: 13 }}>
+                  Chưa có nhân viên nào được gán cho khách hàng "{customer.name}".
+                </div>
+              )}
+              {employees.map((emp) => (
+                <button key={emp.id} className="btn" style={pickButtonStyle} onClick={() => handlePickEmployee(emp)}>
+                  {emp.full_name}
+                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-3)" }}>
+                    {emp.employee_code}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
         )}
-
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={submitting || !employeeCode || !password}
-          style={{ width: "100%", justifyContent: "center", marginTop: 4 }}
-        >
-          {submitting ? "Đang đăng nhập..." : "Đăng nhập"}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }
 
-const fieldLabelStyle = {
-  display: "block",
+const stepLabelStyle = {
   fontFamily: "var(--font-mono)",
   fontSize: 10.5,
   textTransform: "uppercase" as const,
   letterSpacing: "0.06em",
   color: "var(--color-text-2)",
-  marginBottom: 6,
-  marginTop: 12,
+  marginBottom: 10,
 };
 
-const inputStyle = {
+const pickButtonStyle = {
   width: "100%",
-  padding: "9px 12px",
-  borderRadius: 9,
-  border: "1px solid var(--color-border)",
-  fontSize: 14,
-  outline: "none",
+  justifyContent: "flex-start",
+  textAlign: "left" as const,
 };

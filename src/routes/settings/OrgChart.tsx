@@ -8,8 +8,8 @@ import {
   updateEmployee,
   setCustomerManagerScope,
   setEmployeeBrandScope,
+  createEmployeeDirect,
 } from "@/lib/api";
-import { createEmployee, adminResetPassword } from "@/lib/edgeFunctions";
 import { roleLabel } from "@/lib/AuthContext";
 import type { Customer, Employee, Role } from "@/lib/types";
 
@@ -23,7 +23,6 @@ export function OrgChart() {
 
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<Role>("employee");
   const [newBrandIds, setNewBrandIds] = useState<string[]>(isBrandLeader ? managedCustomerIds : []);
   const [formError, setFormError] = useState<string | null>(null);
@@ -43,41 +42,28 @@ export function OrgChart() {
   const customerName = (id: string) => customers.find((c) => c.id === id)?.name ?? id;
 
   async function handleCreateEmployee() {
-    if (!newCode.trim() || !newName.trim() || !newPassword) {
-      setFormError("Điền đủ mã NV, họ tên, mật khẩu.");
+    if (!newCode.trim() || !newName.trim()) {
+      setFormError("Điền đủ mã NV và họ tên.");
       return;
     }
     setFormError(null);
     setCreating(true);
     try {
-      await createEmployee({
+      await createEmployeeDirect({
         employeeCode: newCode.trim(),
         fullName: newName.trim(),
-        password: newPassword,
         role: isSuperAdmin ? newRole : "employee",
         brandCustomerIds: isSuperAdmin ? newBrandIds : managedCustomerIds,
       });
       setNewCode("");
       setNewName("");
-      setNewPassword("");
       setNewRole("employee");
       setNewBrandIds(isBrandLeader ? managedCustomerIds : []);
       await reload();
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Không tạo được nhân viên.");
+      setFormError(e instanceof Error ? e.message : "Không tạo được nhân viên (mã NV có thể đã tồn tại).");
     } finally {
       setCreating(false);
-    }
-  }
-
-  async function handleResetPassword(employeeId: string) {
-    const pwd = window.prompt("Nhập mật khẩu mới cho nhân viên này:");
-    if (!pwd) return;
-    try {
-      await adminResetPassword({ employeeId, newPassword: pwd });
-      window.alert("Đã đặt lại mật khẩu.");
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "Lỗi khi đặt lại mật khẩu.");
     }
   }
 
@@ -85,16 +71,9 @@ export function OrgChart() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="card">
         <div className="card-header">Thêm nhân viên mới</div>
-        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+        <div style={{ padding: 16, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
           <input placeholder="Mã NV" value={newCode} onChange={(e) => setNewCode(e.target.value)} style={inputStyle} />
           <input placeholder="Họ tên" value={newName} onChange={(e) => setNewName(e.target.value)} style={inputStyle} />
-          <input
-            placeholder="Mật khẩu"
-            type="text"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            style={inputStyle}
-          />
           {isSuperAdmin ? (
             <select value={newRole} onChange={(e) => setNewRole(e.target.value as Role)} style={inputStyle}>
               <option value="employee">Nhân viên</option>
@@ -191,18 +170,13 @@ export function OrgChart() {
                   <td style={{ display: "flex", gap: 6 }}>
                     {(isSuperAdmin || managedCustomerIds.some((id) => brands.includes(id))) &&
                       emp.id !== me?.id && (
-                        <>
-                          <button className="btn" style={{ padding: "4px 8px" }} onClick={() => handleResetPassword(emp.id)}>
-                            Reset MK
-                          </button>
-                          <button
-                            className="btn"
-                            style={{ padding: "4px 8px" }}
-                            onClick={() => updateEmployee(emp.id, { active: !emp.active }).then(() => reload())}
-                          >
-                            {emp.active ? "Vô hiệu" : "Kích hoạt"}
-                          </button>
-                        </>
+                        <button
+                          className="btn"
+                          style={{ padding: "4px 8px" }}
+                          onClick={() => updateEmployee(emp.id, { active: !emp.active }).then(() => reload())}
+                        >
+                          {emp.active ? "Vô hiệu" : "Kích hoạt"}
+                        </button>
                       )}
                     {isSuperAdmin && (
                       <button

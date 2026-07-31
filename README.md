@@ -1,18 +1,25 @@
 # Garment Development Tracking — Quản lý tiến độ phát triển sản phẩm
 
-Web app nội bộ cho bộ phận Product Development của công ty may FOB: nhân viên đăng nhập
-bằng mã số + mật khẩu, theo dõi tiến độ mã hàng qua các bước công việc (Proto1/2/3, SMS,
-Sizeset, PPS...) theo deadline; quản lý (Admin/Brand Leader) cấu hình khách hàng/mùa/bước
-công việc, phân công, xem báo cáo tổng hợp.
+Web app nội bộ cho bộ phận Product Development của công ty may FOB: nhân viên vào app chọn
+khách hàng rồi chọn tên mình trong danh sách (không tài khoản/mật khẩu), theo dõi tiến độ mã
+hàng qua các bước công việc (Proto1/2/3, SMS, Sizeset, PPS...) theo deadline; quản lý
+(Admin/Brand Leader) cấu hình khách hàng/mùa/bước công việc, phân công, xem báo cáo tổng hợp.
 
 Giao diện lấy cảm hứng từ `PDC_CanDoi_Demand_2026.html` (dashboard nội bộ cùng công ty).
+
+> **⚠️ Không có xác thực/bảo mật thực sự.** Đây là lựa chọn có chủ đích để tối giản: bất kỳ
+> ai có link đều xem/sửa được toàn bộ dữ liệu (khách hàng, deadline, tiến độ...) và có thể
+> "giả danh" bất kỳ nhân viên nào chỉ bằng cách chọn tên — phân quyền admin/brand_leader/
+> employee chỉ còn là gợi ý giao diện, **không** được database enforce. Chỉ phù hợp nếu dữ
+> liệu không nhạy cảm hoặc bạn chấp nhận rủi ro này khi host public.
 
 ## Stack
 
 - **Frontend:** React + Vite + TypeScript (SPA thuần, không SSR) + react-router + Chart.js.
-- **Backend:** Supabase (Postgres + Auth + Row Level Security + 2 Edge Function).
+- **Backend:** Supabase (chỉ dùng Postgres làm nơi lưu dữ liệu — không dùng Auth, không RLS,
+  không Edge Function).
 - **Hosting:** build tĩnh (`dist/`) upload lên Hostinger; Supabase host riêng (không liên quan
-  Hostinger) đóng vai trò backend/API.
+  Hostinger) đóng vai trò database/API.
 
 ## 1. Cài đặt local
 
@@ -25,28 +32,16 @@ npm run dev
 ## 2. Tạo project Supabase
 
 1. Tạo project mới tại [supabase.com](https://supabase.com/dashboard) (free tier đủ dùng).
-2. Vào **SQL Editor**, chạy lần lượt 2 file trong `supabase/migrations/` theo đúng thứ tự:
-   - `20260731000001_schema.sql`
-   - `20260731000002_rls.sql`
-3. Vào **Project Settings > API**, copy `Project URL` và `anon public key` vào `.env`.
-4. Deploy 2 Edge Function (cần [Supabase CLI](https://supabase.com/docs/guides/cli)):
+2. Vào **SQL Editor**, chạy lần lượt 3 file trong `supabase/migrations/` theo đúng thứ tự:
+   - `20260731000001_schema.sql` — tạo bảng
+   - `20260731000002_rls.sql` — tạo hàm/luật phân quyền (lịch sử)
+   - `20260731000003_remove_auth.sql` — gỡ ràng buộc tài khoản, tắt RLS, mở quyền cho `anon`
+3. Vào **Project Settings > API**, copy `Project URL` và **Publishable/anon key** vào `.env`.
+4. Tạo dữ liệu mẫu (vài nhân viên/khách hàng/mã hàng để thử — dùng chung `.env` ở trên, không
+   cần key nào khác):
    ```bash
-   supabase login
-   supabase link --project-ref <project-ref>
-   supabase functions deploy create-employee
-   supabase functions deploy admin-reset-password
-   ```
-   (Edge Function tự có quyền dùng `SUPABASE_SERVICE_ROLE_KEY` — Supabase tự inject biến này,
-   không cần khai báo thủ công.)
-5. Tạo dữ liệu mẫu (tài khoản đăng nhập thử + vài khách hàng/mã hàng):
-   ```bash
-   cp .env.seed.example .env.seed   # điền SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (khác anon key!)
    npm run seed
    ```
-   Script in ra danh sách mã NV/mật khẩu mẫu sau khi chạy xong.
-
-**Lưu ý bảo mật:** `SUPABASE_SERVICE_ROLE_KEY` có toàn quyền, bỏ qua RLS — chỉ dùng ở máy cá
-nhân khi chạy seed, tuyệt đối không đưa vào `.env` (frontend) hay commit lên Git.
 
 ## 3. Build & host lên Hostinger
 
@@ -70,28 +65,27 @@ git remote add origin <URL repo GitHub>
 git push -u origin main
 ```
 
-`.env` / `.env.seed` đã nằm trong `.gitignore` — không bị đẩy lên GitHub. `VITE_SUPABASE_ANON_KEY`
-an toàn khi public vì mọi quyền truy cập dữ liệu đều được Row Level Security ở Postgres kiểm
-soát theo `auth.uid()`, không dựa vào việc giấu khoá này.
+`.env` đã nằm trong `.gitignore` — không bị đẩy lên GitHub (dù key này không có gì bí mật để
+bảo vệ nữa, vì mọi bảng đều mở quyền công khai cho `anon`).
 
 ## Cấu trúc thư mục
 
 ```
 src/
-  lib/        auth (AuthContext), truy vấn Supabase (api.ts), logic trạng thái (status.ts)
+  lib/        "auth" (AuthContext — chỉ chọn nhân viên qua localStorage), truy vấn Supabase
+              (api.ts), logic trạng thái (status.ts)
   components/ Sidebar, Topbar, ProgressMatrix, TimelineChart, MultiStyleTimeline...
-  routes/     Login, Home, CustomerStyles, StyleProgress, OverallTimeline, Dashboard,
-              settings/ (GeneralInfo, OrgChart, StylesAssignmentGrid)
+  routes/     Login (màn hình chọn khách hàng → tên), Home, CustomerStyles, StyleProgress,
+              OverallTimeline, Dashboard, settings/ (GeneralInfo, OrgChart, StylesAssignmentGrid)
 supabase/
-  migrations/ schema.sql + rls.sql
-  functions/  create-employee, admin-reset-password (Edge Functions)
+  migrations/ schema.sql + rls.sql (lịch sử) + remove_auth.sql (trạng thái hiện tại)
   seed.ts     script tạo dữ liệu mẫu
 ```
 
-## 3 cấp quyền
+## 3 cấp quyền (chỉ ở giao diện, không được database enforce)
 
 | Role | Mô tả |
 |---|---|
-| `admin` | Toàn quyền: mọi khách hàng, cấu hình, nhân viên, cấp quyền. |
-| `brand_leader` | Như admin nhưng giới hạn trong khách hàng (brand) được giao (`customer_managers`) — phân công việc, sửa deadline/bước công việc, **tự thêm nhân viên mới** (luôn ở role `employee`, tự gán vào brand của mình). |
+| `admin` | Toàn quyền: mọi khách hàng, cấu hình, nhân viên. |
+| `brand_leader` | Như admin nhưng giao diện giới hạn trong khách hàng (brand) được giao (`customer_managers`) — phân công việc, sửa deadline/bước công việc, **tự thêm nhân viên mới** (luôn ở role `employee`, tự gán vào brand của mình). |
 | `employee` | Chỉ thấy/cập nhật mã hàng được giao (`style_assignments`) — không sửa deadline, không vào Cài đặt chung. |

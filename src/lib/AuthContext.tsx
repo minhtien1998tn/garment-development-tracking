@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { supabase, EMPLOYEE_EMAIL_DOMAIN } from "./supabaseClient";
+import { supabase } from "./supabaseClient";
 import type { Employee, Role } from "./types";
+
+const STORAGE_KEY = "gdt_current_employee_id";
 
 interface AuthState {
   loading: boolean;
@@ -10,33 +12,30 @@ interface AuthState {
   isBrandLeader: boolean;
   canManageCustomer: (customerId: string) => boolean;
   canManageSettings: boolean;
-  login: (employeeCode: string, password: string) => Promise<{ error: string | null }>;
-  logout: () => Promise<void>;
+  selectEmployee: (employeeId: string) => Promise<void>;
+  logout: () => void;
   refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
-
-export function employeeCodeToEmail(employeeCode: string): string {
-  return `${employeeCode.trim().toLowerCase()}@${EMPLOYEE_EMAIL_DOMAIN}`;
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [managedCustomerIds, setManagedCustomerIds] = useState<string[]>([]);
 
-  async function loadEmployee(userId: string) {
+  async function loadEmployee(id: string) {
     const { data: emp } = await supabase
       .from("employees")
       .select("*")
-      .eq("id", userId)
+      .eq("id", id)
       .eq("active", true)
       .maybeSingle<Employee>();
 
     if (!emp) {
       setEmployee(null);
       setManagedCustomerIds([]);
+      localStorage.removeItem(STORAGE_KEY);
       return;
     }
 
@@ -55,10 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refresh() {
     setLoading(true);
-    const { data } = await supabase.auth.getSession();
-    const userId = data.session?.user.id;
-    if (userId) {
-      await loadEmployee(userId);
+    const id = localStorage.getItem(STORAGE_KEY);
+    if (id) {
+      await loadEmployee(id);
     } else {
       setEmployee(null);
       setManagedCustomerIds([]);
@@ -68,27 +66,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh();
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user.id) {
-        loadEmployee(session.user.id);
-      } else {
-        setEmployee(null);
-        setManagedCustomerIds([]);
-      }
-    });
-    return () => sub.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function login(employeeCode: string, password: string) {
-    const email = employeeCodeToEmail(employeeCode);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: "Mã nhân viên hoặc mật khẩu không đúng." };
-    return { error: null };
+  async function selectEmployee(employeeId: string) {
+    localStorage.setItem(STORAGE_KEY, employeeId);
+    await loadEmployee(employeeId);
   }
 
-  async function logout() {
-    await supabase.auth.signOut();
+  function logout() {
+    localStorage.removeItem(STORAGE_KEY);
     setEmployee(null);
     setManagedCustomerIds([]);
   }
@@ -111,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isBrandLeader,
       canManageCustomer,
       canManageSettings: isSuperAdmin || isBrandLeader,
-      login,
+      selectEmployee,
       logout,
       refresh,
     }),

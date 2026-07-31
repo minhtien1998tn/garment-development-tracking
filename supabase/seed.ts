@@ -1,47 +1,40 @@
 // Script seed dữ liệu mẫu — chạy 1 lần sau khi đã apply migrations trên project Supabase thật.
-// Cần SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (Project Settings > API) trong biến môi trường
-// hoặc file .env.seed (KHÔNG commit file này — đã có trong .gitignore).
+// Không có tài khoản/mật khẩu (đã bỏ xác thực) — chỉ cần VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+// trong file .env (dùng chung với app, vì bảng đã mở quyền cho anon).
 //
 //   npm run seed
 //
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 
-config({ path: ".env.seed" });
+config({ path: ".env" });
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const EMAIL_DOMAIN = "pdc.local";
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  console.error("Thiếu SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY trong môi trường (xem .env.seed.example).");
+if (!SUPABASE_URL || !ANON_KEY) {
+  console.error("Thiếu VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY trong .env.");
   process.exit(1);
 }
 
-const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+const db = createClient(SUPABASE_URL, ANON_KEY);
 
-async function ensureEmployee(code: string, fullName: string, role: string, password: string) {
-  const email = `${code.toLowerCase()}@${EMAIL_DOMAIN}`;
-  const { data: existing } = await admin.from("employees").select("id").eq("employee_code", code).maybeSingle();
+async function ensureEmployee(code: string, fullName: string, role: string) {
+  const { data: existing } = await db.from("employees").select("id").eq("employee_code", code).maybeSingle();
   if (existing) {
     console.log(`  = ${code} đã tồn tại, bỏ qua.`);
     return existing.id as string;
   }
 
-  const { data: created, error } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-  });
-  if (error || !created.user) throw new Error(`Tạo auth user ${code} lỗi: ${error?.message}`);
-
-  const { error: empErr } = await admin
+  const { data, error } = await db
     .from("employees")
-    .insert({ id: created.user.id, employee_code: code, full_name: fullName, role, active: true });
-  if (empErr) throw new Error(`Tạo employee ${code} lỗi: ${empErr.message}`);
+    .insert({ employee_code: code, full_name: fullName, role, active: true })
+    .select()
+    .single();
+  if (error) throw new Error(`Tạo employee ${code} lỗi: ${error.message}`);
 
-  console.log(`  + ${code} (${role}) — mật khẩu: ${password}`);
-  return created.user.id;
+  console.log(`  + ${code} (${role}) — ${fullName}`);
+  return data.id as string;
 }
 
 function daysFromToday(offset: number): string {
@@ -52,10 +45,10 @@ function daysFromToday(offset: number): string {
 
 async function main() {
   console.log("1. Tạo nhân viên mẫu...");
-  await ensureEmployee("ADMIN01", "Nguyễn Văn Quản Trị", "admin", "Admin@123");
-  const blId = await ensureEmployee("BL001", "Lê Văn Hùng", "brand_leader", "Brand@123");
-  const empId1 = await ensureEmployee("NV001", "Trần Thị Mai", "employee", "Employee@123");
-  const empId2 = await ensureEmployee("NV002", "Phạm Thị Lan", "employee", "Employee@123");
+  await ensureEmployee("ADMIN01", "Nguyễn Văn Quản Trị", "admin");
+  const blId = await ensureEmployee("BL001", "Lê Văn Hùng", "brand_leader");
+  const empId1 = await ensureEmployee("NV001", "Trần Thị Mai", "employee");
+  const empId2 = await ensureEmployee("NV002", "Phạm Thị Lan", "employee");
 
   console.log("2. Tạo khách hàng (brand) + mùa + bước công việc...");
   const customersData = [
@@ -84,13 +77,13 @@ async function main() {
   const stepIds: Record<string, { id: string; name: string; sort_order: number }[]> = {};
 
   for (const c of customersData) {
-    const { data: existingCustomer } = await admin.from("customers").select("*").eq("code", c.code).maybeSingle();
+    const { data: existingCustomer } = await db.from("customers").select("*").eq("code", c.code).maybeSingle();
     let customerId: string;
     if (existingCustomer) {
       customerId = existingCustomer.id;
       console.log(`  = ${c.code} đã tồn tại.`);
     } else {
-      const { data, error } = await admin.from("customers").insert({ code: c.code, name: c.name }).select().single();
+      const { data, error } = await db.from("customers").insert({ code: c.code, name: c.name }).select().single();
       if (error) throw new Error(error.message);
       customerId = data.id;
       console.log(`  + ${c.name}`);
@@ -100,7 +93,7 @@ async function main() {
     stepIds[c.code] = [];
 
     for (const seasonName of c.seasons) {
-      const { data: existingSeason } = await admin
+      const { data: existingSeason } = await db
         .from("seasons")
         .select("id")
         .eq("customer_id", customerId)
@@ -110,7 +103,7 @@ async function main() {
         seasonIds[c.code][seasonName] = existingSeason.id;
         continue;
       }
-      const { data, error } = await admin
+      const { data, error } = await db
         .from("seasons")
         .insert({ customer_id: customerId, name: seasonName })
         .select()
@@ -121,7 +114,7 @@ async function main() {
 
     for (let i = 0; i < c.steps.length; i++) {
       const stepName = c.steps[i];
-      const { data: existingStep } = await admin
+      const { data: existingStep } = await db
         .from("workflow_step_templates")
         .select("id, name, sort_order")
         .eq("customer_id", customerId)
@@ -131,7 +124,7 @@ async function main() {
         stepIds[c.code].push(existingStep);
         continue;
       }
-      const { data, error } = await admin
+      const { data, error } = await db
         .from("workflow_step_templates")
         .insert({ customer_id: customerId, name: stepName, sort_order: i })
         .select()
@@ -142,11 +135,11 @@ async function main() {
   }
 
   console.log("3. Gán Brand Leader + roster nhân viên theo brand...");
-  await admin.from("customer_managers").upsert(
+  await db.from("customer_managers").upsert(
     { customer_id: customerIds["GAP"], employee_id: blId },
     { onConflict: "customer_id,employee_id" }
   );
-  await admin.from("employee_brands").upsert(
+  await db.from("employee_brands").upsert(
     [
       { employee_id: blId, customer_id: customerIds["GAP"] },
       { employee_id: empId1, customer_id: customerIds["GAP"] },
@@ -170,7 +163,7 @@ async function main() {
 
   for (const s of stylesData) {
     const customerId = customerIds[s.code];
-    const { data: existingStyle } = await admin
+    const { data: existingStyle } = await db
       .from("styles")
       .select("id")
       .eq("customer_id", customerId)
@@ -182,7 +175,7 @@ async function main() {
     if (existingStyle) {
       styleId = existingStyle.id;
     } else {
-      const { data, error } = await admin
+      const { data, error } = await db
         .from("styles")
         .insert({ customer_id: customerId, season_id: s.seasonId, style_code: s.styleCode, style_name: s.styleName })
         .select()
@@ -190,9 +183,7 @@ async function main() {
       if (error) throw new Error(error.message);
       styleId = data.id;
 
-      await admin
-        .from("style_assignments")
-        .insert(s.empIds.map((employee_id) => ({ style_id: styleId, employee_id })));
+      await db.from("style_assignments").insert(s.empIds.map((employee_id) => ({ style_id: styleId, employee_id })));
 
       const steps = stepIds[s.code];
       // Trải trạng thái mẫu qua các bước: đã xong đúng hạn / trễ hạn / quá hạn / nguy cơ trễ / bình thường.
@@ -205,7 +196,7 @@ async function main() {
         { deadline: daysFromToday(40), expected: null as string | null, completed: false, actual: null },
       ];
 
-      await admin.from("style_progress").insert(
+      await db.from("style_progress").insert(
         steps.map((step, i) => {
           const p = patterns[i % patterns.length];
           return {
@@ -221,11 +212,10 @@ async function main() {
     }
   }
 
-  console.log("\nHoàn tất. Tài khoản đăng nhập mẫu:");
-  console.log("  ADMIN01 / Admin@123      (Admin)");
-  console.log("  BL001   / Brand@123      (Brand Leader — GAP)");
-  console.log("  NV001   / Employee@123   (Employee)");
-  console.log("  NV002   / Employee@123   (Employee)");
+  console.log("\nHoàn tất. Không cần mật khẩu — vào app, chọn khách hàng rồi chọn tên:");
+  console.log("  Nguyễn Văn Quản Trị (ADMIN01) — Admin, thấy mọi khách hàng");
+  console.log("  Lê Văn Hùng (BL001) — Brand Leader của GAP");
+  console.log("  Trần Thị Mai (NV001), Phạm Thị Lan (NV002) — Employee");
 }
 
 main().catch((err) => {

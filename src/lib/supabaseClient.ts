@@ -10,6 +10,3 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-/** Domain dùng cho email tổng hợp mã NV -> email, phải khớp với migrations/seed. */
-export const EMPLOYEE_EMAIL_DOMAIN = "pdc.local";
