@@ -1,0 +1,10 @@
+# Hostinger (Apache): SPA dùng client-side routing (react-router) — mọi route con phải
+# fallback về index.html, nếu không refresh trang con (vd /styles/xxx) sẽ ra lỗi 404.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
