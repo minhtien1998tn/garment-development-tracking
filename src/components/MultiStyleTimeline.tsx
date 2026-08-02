@@ -8,6 +8,7 @@ export interface TimelineRow {
   styleId: string;
   styleCode: string;
   styleName: string | null;
+  customerId: string;
   customerName: string;
   assigneeNames: string[];
   steps: WorkflowStepTemplate[];

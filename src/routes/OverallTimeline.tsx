@@ -13,9 +13,12 @@ import {
 } from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { computeStatus } from "@/lib/status";
+import type { Customer } from "@/lib/types";
 
 export function OverallTimeline() {
   const { employee } = useAuth();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [rows, setRows] = useState<TimelineRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -23,11 +26,12 @@ export function OverallTimeline() {
     if (!employee) return;
     (async () => {
       setLoading(true);
-      const [customers, employees] = await Promise.all([listMyCustomers(), listEmployees()]);
+      const [myCustomers, employees] = await Promise.all([listMyCustomers(), listEmployees()]);
+      setCustomers(myCustomers);
       const empNameById = new Map(employees.map((e) => [e.id, e.full_name]));
       const built: TimelineRow[] = [];
 
-      for (const c of customers) {
+      for (const c of myCustomers) {
         let styles = await listStylesForCustomer(c.id);
         if (employee.role === "employee") {
           const { data } = await supabase
@@ -66,6 +70,7 @@ export function OverallTimeline() {
             styleId: s.id,
             styleCode: s.style_code,
             styleName: s.style_name,
+            customerId: c.id,
             customerName: c.name,
             assigneeNames: assigneesByStyle.get(s.id) ?? [],
             steps,
@@ -78,13 +83,15 @@ export function OverallTimeline() {
     })();
   }, [employee]);
 
-  const overdueCount = rows.filter((r) =>
+  const visibleRows = selectedCustomerId ? rows.filter((r) => r.customerId === selectedCustomerId) : rows;
+
+  const overdueCount = visibleRows.filter((r) =>
     [...r.progressByStep.values()].some((p) => !p.is_completed && computeStatus(p) === "overdue")
   ).length;
-  const atRiskCount = rows.filter((r) =>
+  const atRiskCount = visibleRows.filter((r) =>
     [...r.progressByStep.values()].some((p) => !p.is_completed && computeStatus(p) === "at_risk")
   ).length;
-  const doneCount = rows.filter(
+  const doneCount = visibleRows.filter(
     (r) => r.steps.length > 0 && r.steps.every((s) => r.progressByStep.get(s.id)?.is_completed)
   ).length;
 
@@ -92,9 +99,31 @@ export function OverallTimeline() {
     <>
       <Topbar title="Tổng tiến độ toàn bộ mã hàng" />
       <div className="content">
-        {!loading && rows.length > 0 && (
+        {customers.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <select
+              value={selectedCustomerId}
+              onChange={(e) => setSelectedCustomerId(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 9,
+                border: "1px solid var(--color-border)",
+                fontSize: 13,
+              }}
+            >
+              <option value="">Tất cả khách hàng</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {!loading && visibleRows.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
-            <KpiCard label="Tổng mã hàng" value={rows.length} />
+            <KpiCard label="Tổng mã hàng" value={visibleRows.length} />
             <KpiCard label="Đã hoàn thành" value={doneCount} accent="var(--color-green)" />
             <KpiCard label="Nguy cơ trễ" value={atRiskCount} accent="var(--color-amber)" />
             <KpiCard label="Quá hạn" value={overdueCount} accent="var(--color-rose)" />
@@ -104,7 +133,7 @@ export function OverallTimeline() {
         <div className="card">
           <div className="card-header">Chi tiết tiến độ theo mã hàng — bấm vào để xem chi tiết</div>
           <div style={{ padding: 16 }}>
-            {loading ? <div>Đang tải...</div> : <MultiStyleTimeline rows={rows} />}
+            {loading ? <div>Đang tải...</div> : <MultiStyleTimeline rows={visibleRows} />}
           </div>
         </div>
       </div>
