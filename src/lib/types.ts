@@ -25,9 +25,20 @@ export interface Season {
   sort_order: number;
 }
 
+/** Cấp 1 — giai đoạn thực hiện (vd: "Phát triển mẫu", "Duyệt mẫu"), riêng theo từng khách hàng. */
+export interface WorkflowPhase {
+  id: string;
+  customer_id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
+}
+
+/** Cấp 2 — bước công việc con thuộc 1 giai đoạn (vd: Proto 1, Proto 2, SMS...). */
 export interface WorkflowStepTemplate {
   id: string;
   customer_id: string;
+  phase_id: string;
   name: string;
   sort_order: number;
   active: boolean;

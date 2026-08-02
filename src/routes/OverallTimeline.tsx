@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import {
   listMyCustomers,
   listStylesForCustomer,
+  listPhases,
   listStepTemplates,
   listProgressForStyles,
   listAssignmentsForStyles,
@@ -44,7 +45,8 @@ export function OverallTimeline() {
         if (styles.length === 0) continue;
 
         const styleIds = styles.map((s) => s.id);
-        const [steps, progress, assignments] = await Promise.all([
+        const [phases, steps, progress, assignments] = await Promise.all([
+          listPhases(c.id),
           listStepTemplates(c.id),
           listProgressForStyles(styleIds),
           listAssignmentsForStyles(styleIds),
@@ -73,6 +75,7 @@ export function OverallTimeline() {
             customerId: c.id,
             customerName: c.name,
             assigneeNames: assigneesByStyle.get(s.id) ?? [],
+            phases,
             steps,
             progressByStep: new Map((progressByStyle.get(s.id) ?? []).map((p) => [p.step_template_id, p])),
           });

@@ -4,14 +4,22 @@ import { Topbar } from "@/components/Topbar";
 import { TimelineChart } from "@/components/TimelineChart";
 import { ProgressMatrix } from "@/components/ProgressMatrix";
 import { useAuth } from "@/lib/AuthContext";
-import { getStyle, listStepTemplates, listProgressForStyle, upsertProgress } from "@/lib/api";
+import {
+  getStyle,
+  listPhases,
+  listStepTemplates,
+  listProgressForStyle,
+  upsertProgress,
+  orderStepsByPhase,
+} from "@/lib/api";
 import { todayInputValue } from "@/lib/date";
-import type { Style, StyleProgress as StyleProgressRow, WorkflowStepTemplate } from "@/lib/types";
+import type { Style, StyleProgress as StyleProgressRow, WorkflowPhase, WorkflowStepTemplate } from "@/lib/types";
 
 export function StyleProgress() {
   const { styleId } = useParams<{ styleId: string }>();
   const { employee, canManageCustomer } = useAuth();
   const [style, setStyle] = useState<Style | null>(null);
+  const [phases, setPhases] = useState<WorkflowPhase[]>([]);
   const [steps, setSteps] = useState<WorkflowStepTemplate[]>([]);
   const [progressByStep, setProgressByStep] = useState<Map<string, StyleProgressRow>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -23,11 +31,13 @@ export function StyleProgress() {
       setLoading(true);
       const s = await getStyle(styleId);
       setStyle(s);
-      const [stepList, progressList] = await Promise.all([
+      const [phaseList, stepList, progressList] = await Promise.all([
+        listPhases(s.customer_id),
         listStepTemplates(s.customer_id),
         listProgressForStyle(styleId),
       ]);
-      setSteps(stepList);
+      setPhases(phaseList);
+      setSteps(orderStepsByPhase(phaseList, stepList));
       setProgressByStep(new Map(progressList.map((p) => [p.step_template_id, p])));
       setLoading(false);
     })();
@@ -95,6 +105,7 @@ export function StyleProgress() {
           <div className="card-header">Lưới tiến độ chi tiết</div>
           <div style={{ padding: 16 }}>
             <ProgressMatrix
+              phases={phases}
               steps={steps}
               progressByStep={progressByStep}
               canEditDeadline={canEditDeadline}

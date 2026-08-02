@@ -7,24 +7,30 @@ import {
   listSeasons,
   createSeason,
   updateSeason,
+  listPhasesAll,
+  createPhase,
+  updatePhase,
+  reorderPhases,
   listStepTemplatesAll,
   createStepTemplate,
   updateStepTemplate,
   reorderStepTemplates,
 } from "@/lib/api";
-import type { Customer, Season, WorkflowStepTemplate } from "@/lib/types";
+import type { Customer, Season, WorkflowPhase, WorkflowStepTemplate } from "@/lib/types";
 
 export function GeneralInfo() {
   const { isSuperAdmin, canManageCustomer } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [phases, setPhases] = useState<WorkflowPhase[]>([]);
   const [steps, setSteps] = useState<WorkflowStepTemplate[]>([]);
 
   const [newCustomerCode, setNewCustomerCode] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newSeasonName, setNewSeasonName] = useState("");
-  const [newStepName, setNewStepName] = useState("");
+  const [newPhaseName, setNewPhaseName] = useState("");
+  const [newStepNameByPhase, setNewStepNameByPhase] = useState<Record<string, string>>({});
 
   async function reloadCustomers() {
     const list = await listAllCustomers();
@@ -40,6 +46,7 @@ export function GeneralInfo() {
   useEffect(() => {
     if (!selectedId) return;
     listSeasons(selectedId).then(setSeasons);
+    listPhasesAll(selectedId).then(setPhases);
     listStepTemplatesAll(selectedId).then(setSteps);
   }, [selectedId]);
 
@@ -61,28 +68,58 @@ export function GeneralInfo() {
     setNewSeasonName("");
   }
 
-  async function handleAddStep() {
-    if (!selectedId || !newStepName.trim()) return;
-    const sortOrder = steps.length > 0 ? Math.max(...steps.map((s) => s.sort_order)) + 1 : 0;
-    const step = await createStepTemplate(selectedId, newStepName.trim(), sortOrder);
-    setSteps((prev) => [...prev, step]);
-    setNewStepName("");
+  async function handleAddPhase() {
+    if (!selectedId || !newPhaseName.trim()) return;
+    const sortOrder = phases.length > 0 ? Math.max(...phases.map((p) => p.sort_order)) + 1 : 0;
+    const phase = await createPhase(selectedId, newPhaseName.trim(), sortOrder);
+    setPhases((prev) => [...prev, phase]);
+    setNewPhaseName("");
   }
 
-  async function moveStep(index: number, dir: -1 | 1) {
+  async function movePhase(index: number, dir: -1 | 1) {
     const target = index + dir;
-    if (target < 0 || target >= steps.length) return;
-    const a = steps[index];
-    const b = steps[target];
+    if (target < 0 || target >= phases.length) return;
+    const a = phases[index];
+    const b = phases[target];
+    await reorderPhases([
+      { id: a.id, sort_order: b.sort_order },
+      { id: b.id, sort_order: a.sort_order },
+    ]);
+    const next = [...phases];
+    next[index] = { ...b, sort_order: a.sort_order };
+    next[target] = { ...a, sort_order: b.sort_order };
+    next.sort((x, y) => x.sort_order - y.sort_order);
+    setPhases(next);
+  }
+
+  async function handleAddStep(phaseId: string) {
+    if (!selectedId) return;
+    const name = (newStepNameByPhase[phaseId] ?? "").trim();
+    if (!name) return;
+    const stepsInPhase = steps.filter((s) => s.phase_id === phaseId);
+    const sortOrder = stepsInPhase.length > 0 ? Math.max(...stepsInPhase.map((s) => s.sort_order)) + 1 : 0;
+    const step = await createStepTemplate(selectedId, phaseId, name, sortOrder);
+    setSteps((prev) => [...prev, step]);
+    setNewStepNameByPhase((prev) => ({ ...prev, [phaseId]: "" }));
+  }
+
+  async function moveStep(phaseId: string, index: number, dir: -1 | 1) {
+    const stepsInPhase = steps.filter((s) => s.phase_id === phaseId).sort((a, b) => a.sort_order - b.sort_order);
+    const target = index + dir;
+    if (target < 0 || target >= stepsInPhase.length) return;
+    const a = stepsInPhase[index];
+    const b = stepsInPhase[target];
     await reorderStepTemplates([
       { id: a.id, sort_order: b.sort_order },
       { id: b.id, sort_order: a.sort_order },
     ]);
-    const next = [...steps];
-    next[index] = { ...b, sort_order: a.sort_order };
-    next[target] = { ...a, sort_order: b.sort_order };
-    next.sort((x, y) => x.sort_order - y.sort_order);
-    setSteps(next);
+    setSteps((prev) =>
+      prev.map((s) => {
+        if (s.id === a.id) return { ...s, sort_order: b.sort_order };
+        if (s.id === b.id) return { ...s, sort_order: a.sort_order };
+        return s;
+      })
+    );
   }
 
   return (
@@ -194,45 +231,130 @@ export function GeneralInfo() {
           </div>
 
           <div className="card">
-            <div className="card-header">Bước công việc (áp dụng cho mọi mã hàng của khách hàng này)</div>
-            <div style={{ padding: 14 }}>
-              {steps.map((s, i) => (
-                <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                  <span style={{ flex: 1 }}>{s.name}</span>
-                  {!s.active && <span className="badge badge-gray">Ẩn</span>}
-                  {canEdit && (
-                    <>
-                      <button className="btn" style={{ padding: "4px 8px" }} onClick={() => moveStep(i, -1)}>
-                        ↑
-                      </button>
-                      <button className="btn" style={{ padding: "4px 8px" }} onClick={() => moveStep(i, 1)}>
-                        ↓
-                      </button>
-                      <button
-                        className="btn"
-                        style={{ padding: "4px 8px" }}
-                        onClick={() => {
-                          updateStepTemplate(s.id, { active: !s.active }).then((updated) =>
-                            setSteps((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
-                          );
+            <div className="card-header">Giai đoạn &amp; bước công việc (áp dụng cho mọi mã hàng của khách hàng này)</div>
+            <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 16 }}>
+              {phases
+                .slice()
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map((phase, pi) => {
+                  const stepsInPhase = steps
+                    .filter((s) => s.phase_id === phase.id)
+                    .sort((a, b) => a.sort_order - b.sort_order);
+                  return (
+                    <div key={phase.id} style={{ border: "1px solid var(--color-border)", borderRadius: 10 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 12px",
+                          background: "var(--color-card-2)",
+                          borderBottom: stepsInPhase.length > 0 ? "1px solid var(--color-border)" : "none",
+                          borderRadius: "10px 10px 0 0",
                         }}
                       >
-                        {s.active ? "Ẩn" : "Hiện"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
+                        <span
+                          style={{
+                            flex: 1,
+                            fontFamily: "var(--font-mono)",
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                          }}
+                        >
+                          Cấp 1 — {phase.name}
+                        </span>
+                        {!phase.active && <span className="badge badge-gray">Ẩn</span>}
+                        {canEdit && (
+                          <>
+                            <button className="btn" style={{ padding: "4px 8px" }} onClick={() => movePhase(pi, -1)}>
+                              ↑
+                            </button>
+                            <button className="btn" style={{ padding: "4px 8px" }} onClick={() => movePhase(pi, 1)}>
+                              ↓
+                            </button>
+                            <button
+                              className="btn"
+                              style={{ padding: "4px 8px" }}
+                              onClick={() => {
+                                updatePhase(phase.id, { active: !phase.active }).then((updated) =>
+                                  setPhases((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+                                );
+                              }}
+                            >
+                              {phase.active ? "Ẩn" : "Hiện"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <div style={{ padding: "8px 12px 12px 28px" }}>
+                        {stepsInPhase.map((s, si) => (
+                          <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                            <span style={{ flex: 1, fontSize: 13 }}>Cấp 2 — {s.name}</span>
+                            {!s.active && <span className="badge badge-gray">Ẩn</span>}
+                            {canEdit && (
+                              <>
+                                <button
+                                  className="btn"
+                                  style={{ padding: "4px 8px" }}
+                                  onClick={() => moveStep(phase.id, si, -1)}
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  className="btn"
+                                  style={{ padding: "4px 8px" }}
+                                  onClick={() => moveStep(phase.id, si, 1)}
+                                >
+                                  ↓
+                                </button>
+                                <button
+                                  className="btn"
+                                  style={{ padding: "4px 8px" }}
+                                  onClick={() => {
+                                    updateStepTemplate(s.id, { active: !s.active }).then((updated) =>
+                                      setSteps((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+                                    );
+                                  }}
+                                >
+                                  {s.active ? "Ẩn" : "Hiện"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                        {canEdit && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <input
+                              placeholder="Tên bước con, vd: Proto 1"
+                              value={newStepNameByPhase[phase.id] ?? ""}
+                              onChange={(e) =>
+                                setNewStepNameByPhase((prev) => ({ ...prev, [phase.id]: e.target.value }))
+                              }
+                              style={{ ...inputStyle, flex: 1 }}
+                            />
+                            <button className="btn" onClick={() => handleAddStep(phase.id)}>
+                              + Thêm bước
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
               {canEdit && (
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <div style={{ display: "flex", gap: 8 }}>
                   <input
-                    placeholder="Tên bước, vd: Proto 1"
-                    value={newStepName}
-                    onChange={(e) => setNewStepName(e.target.value)}
+                    placeholder="Tên giai đoạn, vd: Phát triển mẫu"
+                    value={newPhaseName}
+                    onChange={(e) => setNewPhaseName(e.target.value)}
                     style={{ ...inputStyle, flex: 1 }}
                   />
-                  <button className="btn btn-primary" onClick={handleAddStep}>
-                    + Thêm
+                  <button className="btn btn-primary" onClick={handleAddPhase}>
+                    + Thêm giai đoạn
                   </button>
                 </div>
               )}

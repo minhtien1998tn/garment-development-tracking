@@ -50,25 +50,34 @@ async function main() {
   const empId1 = await ensureEmployee("NV001", "Trần Thị Mai", "employee");
   const empId2 = await ensureEmployee("NV002", "Phạm Thị Lan", "employee");
 
-  console.log("2. Tạo khách hàng (brand) + mùa + bước công việc...");
+  console.log("2. Tạo khách hàng (brand) + mùa + giai đoạn + bước công việc...");
   const customersData = [
     {
       code: "GAP",
       name: "GAP Inc.",
       seasons: ["Spring/Summer 2027", "Fall/Winter 2027"],
-      steps: ["Proto 1", "Proto 2", "Proto 3", "SMS", "Sizeset", "PPS"],
+      phases: [
+        { name: "Phát triển mẫu", steps: ["Proto 1", "Proto 2", "Proto 3"] },
+        { name: "Duyệt mẫu & sản xuất thử", steps: ["SMS", "Sizeset", "PPS"] },
+      ],
     },
     {
       code: "UNQ",
       name: "Uniqlo",
       seasons: ["FW27"],
-      steps: ["Proto", "Fit Sample", "Pre-Production", "Shipment Sample"],
+      phases: [
+        { name: "Phát triển mẫu", steps: ["Proto", "Fit Sample"] },
+        { name: "Trước sản xuất", steps: ["Pre-Production", "Shipment Sample"] },
+      ],
     },
     {
       code: "HM",
       name: "H&M",
       seasons: ["SS27"],
-      steps: ["Proto 1", "Proto 2", "SMS", "PPS"],
+      phases: [
+        { name: "Phát triển mẫu", steps: ["Proto 1", "Proto 2"] },
+        { name: "Duyệt mẫu & sản xuất thử", steps: ["SMS", "PPS"] },
+      ],
     },
   ];
 
@@ -112,25 +121,47 @@ async function main() {
       seasonIds[c.code][seasonName] = data.id;
     }
 
-    for (let i = 0; i < c.steps.length; i++) {
-      const stepName = c.steps[i];
-      const { data: existingStep } = await db
-        .from("workflow_step_templates")
-        .select("id, name, sort_order")
+    for (let pi = 0; pi < c.phases.length; pi++) {
+      const phase = c.phases[pi];
+      let phaseId: string;
+      const { data: existingPhase } = await db
+        .from("workflow_phases")
+        .select("id")
         .eq("customer_id", customerId)
-        .eq("name", stepName)
+        .eq("name", phase.name)
         .maybeSingle();
-      if (existingStep) {
-        stepIds[c.code].push(existingStep);
-        continue;
+      if (existingPhase) {
+        phaseId = existingPhase.id;
+      } else {
+        const { data, error } = await db
+          .from("workflow_phases")
+          .insert({ customer_id: customerId, name: phase.name, sort_order: pi })
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        phaseId = data.id;
       }
-      const { data, error } = await db
-        .from("workflow_step_templates")
-        .insert({ customer_id: customerId, name: stepName, sort_order: i })
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      stepIds[c.code].push(data);
+
+      for (let si = 0; si < phase.steps.length; si++) {
+        const stepName = phase.steps[si];
+        const { data: existingStep } = await db
+          .from("workflow_step_templates")
+          .select("id, name, sort_order")
+          .eq("customer_id", customerId)
+          .eq("name", stepName)
+          .maybeSingle();
+        if (existingStep) {
+          stepIds[c.code].push(existingStep);
+          continue;
+        }
+        const { data, error } = await db
+          .from("workflow_step_templates")
+          .insert({ customer_id: customerId, phase_id: phaseId, name: stepName, sort_order: si })
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        stepIds[c.code].push(data);
+      }
     }
   }
 

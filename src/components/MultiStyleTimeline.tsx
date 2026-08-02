@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { computeStatus, STATUS_COLOR, STATUS_BADGE_CLASS } from "@/lib/status";
+import { orderStepsByPhase } from "@/lib/api";
 import { formatDateVi } from "@/lib/date";
 import { STATUS_LABEL_VI } from "@/lib/types";
-import type { StyleProgress, WorkflowStepTemplate } from "@/lib/types";
+import type { StyleProgress, WorkflowPhase, WorkflowStepTemplate } from "@/lib/types";
 
 export interface TimelineRow {
   styleId: string;
@@ -11,6 +12,7 @@ export interface TimelineRow {
   customerId: string;
   customerName: string;
   assigneeNames: string[];
+  phases: WorkflowPhase[];
   steps: WorkflowStepTemplate[];
   progressByStep: Map<string, StyleProgress>;
 }
@@ -19,6 +21,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface RowSummary {
   orderedSteps: WorkflowStepTemplate[];
+  currentPhase: WorkflowPhase | null;
   currentStep: WorkflowStepTemplate | null;
   currentProgress: StyleProgress | undefined;
   completionPct: number;
@@ -26,7 +29,8 @@ interface RowSummary {
 }
 
 function summarize(row: TimelineRow): RowSummary {
-  const orderedSteps = [...row.steps].sort((a, b) => a.sort_order - b.sort_order);
+  const orderedSteps = orderStepsByPhase(row.phases, row.steps);
+  const phaseById = new Map(row.phases.map((p) => [p.id, p]));
   let doneCount = 0;
   let currentStep: WorkflowStepTemplate | null = null;
   let currentProgress: StyleProgress | undefined;
@@ -46,6 +50,7 @@ function summarize(row: TimelineRow): RowSummary {
   const total = orderedSteps.length;
   return {
     orderedSteps,
+    currentPhase: currentStep ? phaseById.get(currentStep.phase_id) ?? null : null,
     currentStep,
     currentProgress,
     completionPct: total ? Math.round((doneCount / total) * 100) : 0,
@@ -91,7 +96,7 @@ export function MultiStyleTimeline({ rows }: { rows: TimelineRow[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {withSummary.map(({ row, summary }) => {
-        const { currentStep, currentProgress, completionPct, isFullyDone } = summary;
+        const { currentPhase, currentStep, currentProgress, completionPct, isFullyDone } = summary;
         const status = isFullyDone ? "done_on_time" : currentProgress ? computeStatus(currentProgress) : "not_started";
         const barColor = isFullyDone ? "var(--color-green)" : STATUS_COLOR[status];
 
@@ -112,14 +117,15 @@ export function MultiStyleTimeline({ rows }: { rows: TimelineRow[] }) {
                   </div>
                 </div>
 
-                <div style={{ minWidth: 150 }}>
+                <div style={{ minWidth: 170 }}>
                   <div className="kpi-label">Giai đoạn hiện tại</div>
                   <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                    {isFullyDone ? "Hoàn thành toàn bộ" : currentStep?.name ?? "—"}
+                    {isFullyDone ? "Hoàn thành toàn bộ" : currentPhase?.name ?? "—"}
                   </div>
-                  {!isFullyDone && currentProgress?.deadline_date && (
+                  {!isFullyDone && currentStep && (
                     <div style={{ fontSize: 11, color: "var(--color-text-3)" }}>
-                      Deadline {formatDateVi(currentProgress.deadline_date)}
+                      Bước: {currentStep.name}
+                      {currentProgress?.deadline_date && ` · Deadline ${formatDateVi(currentProgress.deadline_date)}`}
                     </div>
                   )}
                 </div>

@@ -1,8 +1,9 @@
 import { StatusBadge } from "./StatusBadge";
 import { computeStatus } from "@/lib/status";
-import type { StyleProgress, WorkflowStepTemplate } from "@/lib/types";
+import type { StyleProgress, WorkflowPhase, WorkflowStepTemplate } from "@/lib/types";
 
 interface Props {
+  phases: WorkflowPhase[];
   steps: WorkflowStepTemplate[];
   progressByStep: Map<string, StyleProgress>;
   canEditDeadline: boolean;
@@ -28,16 +29,44 @@ function emptyRow(stepId: string): StyleProgress {
   };
 }
 
-export function ProgressMatrix({ steps, progressByStep, canEditDeadline, onFieldChange }: Props) {
+/** Nhóm các bước (đã sắp theo giai đoạn) thành từng cụm liên tiếp cùng giai đoạn, để vẽ header gộp ô. */
+function groupByPhase(phases: WorkflowPhase[], steps: WorkflowStepTemplate[]) {
+  const phaseById = new Map(phases.map((p) => [p.id, p]));
+  const groups: { phase: WorkflowPhase | null; count: number }[] = [];
+  for (const step of steps) {
+    const phase = phaseById.get(step.phase_id) ?? null;
+    const last = groups[groups.length - 1];
+    if (last && last.phase?.id === phase?.id) {
+      last.count++;
+    } else {
+      groups.push({ phase, count: 1 });
+    }
+  }
+  return groups;
+}
+
+export function ProgressMatrix({ phases, steps, progressByStep, canEditDeadline, onFieldChange }: Props) {
   if (steps.length === 0) return null;
 
   const rowLabelCol = "150px";
   const stepCols = `repeat(${steps.length}, minmax(140px, 1fr))`;
+  const phaseGroups = groupByPhase(phases, steps);
 
   return (
     <div className="matrix-scroll">
       <div className="matrix-grid" style={{ gridTemplateColumns: `${rowLabelCol} ${stepCols}` }}>
-        <div className="matrix-cell matrix-row-label" />
+        <div className="matrix-cell matrix-row-label">Cấp 1 — Giai đoạn</div>
+        {phaseGroups.map((g, i) => (
+          <div
+            key={g.phase?.id ?? `none-${i}`}
+            className="matrix-cell matrix-col-header"
+            style={{ gridColumn: `span ${g.count}`, color: "var(--color-orange-dark)" }}
+          >
+            {g.phase?.name ?? "—"}
+          </div>
+        ))}
+
+        <div className="matrix-cell matrix-row-label">Cấp 2 — Bước công việc</div>
         {steps.map((s) => (
           <div key={s.id} className="matrix-cell matrix-col-header">
             {s.name}

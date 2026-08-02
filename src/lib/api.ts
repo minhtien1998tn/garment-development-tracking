@@ -7,6 +7,7 @@ import type {
   Style,
   StyleAssignment,
   StyleProgress,
+  WorkflowPhase,
   WorkflowStepTemplate,
 } from "./types";
 
@@ -39,6 +40,16 @@ export async function listSeasons(customerId: string): Promise<Season[]> {
   return orThrow(data, error);
 }
 
+export async function listPhases(customerId: string): Promise<WorkflowPhase[]> {
+  const { data, error } = await supabase
+    .from("workflow_phases")
+    .select("*")
+    .eq("customer_id", customerId)
+    .eq("active", true)
+    .order("sort_order");
+  return orThrow(data, error);
+}
+
 export async function listStepTemplates(customerId: string): Promise<WorkflowStepTemplate[]> {
   const { data, error } = await supabase
     .from("workflow_step_templates")
@@ -47,6 +58,33 @@ export async function listStepTemplates(customerId: string): Promise<WorkflowSte
     .eq("active", true)
     .order("sort_order");
   return orThrow(data, error);
+}
+
+/** Bước công việc đã sắp đúng thứ tự hiển thị: theo giai đoạn (cấp 1) trước, rồi tới bước (cấp 2). */
+export function orderStepsByPhase(
+  phases: WorkflowPhase[],
+  steps: WorkflowStepTemplate[]
+): WorkflowStepTemplate[] {
+  const phaseOrder = new Map(phases.map((p, i) => [p.id, i]));
+  return [...steps].sort((a, b) => {
+    const pa = phaseOrder.get(a.phase_id) ?? 999;
+    const pb = phaseOrder.get(b.phase_id) ?? 999;
+    if (pa !== pb) return pa - pb;
+    return a.sort_order - b.sort_order;
+  });
+}
+
+export interface PhaseWithSteps extends WorkflowPhase {
+  steps: WorkflowStepTemplate[];
+}
+
+/** Giai đoạn kèm sẵn danh sách bước con — dùng để vẽ header 2 tầng ở lưới tiến độ / Cài đặt. */
+export async function listPhasesWithSteps(customerId: string): Promise<PhaseWithSteps[]> {
+  const [phases, steps] = await Promise.all([listPhases(customerId), listStepTemplates(customerId)]);
+  return phases.map((p) => ({
+    ...p,
+    steps: steps.filter((s) => s.phase_id === p.id).sort((a, b) => a.sort_order - b.sort_order),
+  }));
 }
 
 export async function listStylesForCustomer(
@@ -188,6 +226,37 @@ export async function updateSeason(id: string, patch: Partial<Season>): Promise<
   return orThrow(data, error);
 }
 
+/** Bao gồm cả giai đoạn đã ẩn (active=false) — dùng cho màn hình Cài đặt. */
+export async function listPhasesAll(customerId: string): Promise<WorkflowPhase[]> {
+  const { data, error } = await supabase
+    .from("workflow_phases")
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("sort_order");
+  return orThrow(data, error);
+}
+
+export async function createPhase(customerId: string, name: string, sortOrder: number): Promise<WorkflowPhase> {
+  const { data, error } = await supabase
+    .from("workflow_phases")
+    .insert({ customer_id: customerId, name, sort_order: sortOrder })
+    .select()
+    .single();
+  return orThrow(data, error);
+}
+
+export async function updatePhase(id: string, patch: Partial<WorkflowPhase>): Promise<WorkflowPhase> {
+  const { data, error } = await supabase.from("workflow_phases").update(patch).eq("id", id).select().single();
+  return orThrow(data, error);
+}
+
+export async function reorderPhases(items: { id: string; sort_order: number }[]): Promise<void> {
+  for (const item of items) {
+    const { error } = await supabase.from("workflow_phases").update({ sort_order: item.sort_order }).eq("id", item.id);
+    if (error) throw new Error(error.message);
+  }
+}
+
 /** Bao gồm cả bước đã ẩn (active=false) — dùng cho màn hình Cài đặt, khác với listStepTemplates(). */
 export async function listStepTemplatesAll(customerId: string): Promise<WorkflowStepTemplate[]> {
   const { data, error } = await supabase
@@ -200,12 +269,13 @@ export async function listStepTemplatesAll(customerId: string): Promise<Workflow
 
 export async function createStepTemplate(
   customerId: string,
+  phaseId: string,
   name: string,
   sortOrder: number
 ): Promise<WorkflowStepTemplate> {
   const { data, error } = await supabase
     .from("workflow_step_templates")
-    .insert({ customer_id: customerId, name, sort_order: sortOrder })
+    .insert({ customer_id: customerId, phase_id: phaseId, name, sort_order: sortOrder })
     .select()
     .single();
   const step = orThrow(data, error);
