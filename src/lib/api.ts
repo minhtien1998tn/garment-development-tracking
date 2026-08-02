@@ -84,6 +84,12 @@ export async function listAssignmentsForStyle(styleId: string): Promise<StyleAss
   return orThrow(data, error);
 }
 
+export async function listAssignmentsForStyles(styleIds: string[]): Promise<StyleAssignment[]> {
+  if (styleIds.length === 0) return [];
+  const { data, error } = await supabase.from("style_assignments").select("*").in("style_id", styleIds);
+  return orThrow(data, error);
+}
+
 export async function listProgressForStyle(styleId: string): Promise<StyleProgress[]> {
   const { data, error } = await supabase
     .from("style_progress")
